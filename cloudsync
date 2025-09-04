@@ -1,0 +1,82 @@
+#!/bin/bash
+
+# Setup
+SERVER_USER="apache"
+SERVER_GROUP="apache"
+CLOUD_DIR="/datadirectory/user/files"
+SRC_DIR="/path/to/source/"
+OCC="/var/www/nextcloud/htdocs/occ"
+
+if [ "$#" -eq 0 ]; then
+    echo "usage: cloudsync <destination>."
+    echo "info: ${CLOUD_DIR}/<destination>"
+    exit 1
+elif [ "$#" -gt 1 ]; then
+    echo "error: too many arguments."
+    exit 1
+fi
+
+function main() {
+
+    arg="$1"
+    dest="${CLOUD_DIR}/${arg}"
+
+    shopt -s dotglob
+    items=( "${SRC_DIR}"/"${arg}"/* )
+    shopt -u nullglob
+
+    change_owner "${arg}" "${items[@]}"
+
+    if [ ! -d "${dest}" ]; then
+        echo "info: creating ${dest} direcory..."
+        install -d -o ${SERVER_USER} -g ${SERVER_GROUP} -m 750 "${dest}"
+        if [ $? -ne 0 ]; then
+            echo "error: unable to create ${dest} directory."
+            exit 1
+        fi
+    fi
+    move_to_cloud "${arg}" "${items[@]}"
+
+    echo "info: updating nextcloud server..."
+    sudo -u ${SERVER_USER} php ${OCC} files:scan --all
+    if [ $? -ne 0 ]; then
+        echo "error: failed scan nextcloud server"
+        exit 1
+    fi
+
+    echo "done."
+    return 0
+}
+
+function change_owner() {
+
+    src="$1"
+    items="$2"
+
+    chown -R ${SERVER_USER}:${SERVER_GROUP} "${SRC_DIR}"/"${src}"
+    for i in "${items[@]}"; do
+        echo "info: change ownership of ${i} to ${SERVER_USER}:${SERVER_GROUP}..."
+        chown -R ${SERVER_USER}:${SERVER_GROUP} "${i}"
+        if [ $? -ne 0 ]; then
+            echo "error: failed to change ownership of \"${i}\""
+            exit 1
+        fi
+    done
+}
+
+function move_to_cloud() {
+    
+    dest="$1"
+    items="$2"
+
+    for i in "${items[@]}"; do
+        echo "info: moving ${i} to ${CLOUD_DIR}/${dest}/..."
+        mv -n "${i}" "${CLOUD_DIR}"/"${dest}"/"${i##*/}"
+        if [ $? -ne 0 ]; then
+            echo "error: failed to move src to ${i}"
+            exit 1
+        fi
+    done
+}
+
+main "$@"
