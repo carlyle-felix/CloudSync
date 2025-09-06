@@ -1,22 +1,27 @@
 #!/bin/bash
 
-# Setup
-SERVER_USER="apache"
-SERVER_GROUP="apache"
+# SETUP
 CLOUD_DIR="/datadirectory/user/files"
 SRC_DIR="/path/to/source/"
-OCC="/var/www/nextcloud/htdocs/occ"
+NC_DIR="/var/www/nextcloud/htdocs"
+# SETUP END
 
 if [ "$#" -eq 0 ]; then
-    echo "usage: cloudsync <destination>."
-    echo "info: ${CLOUD_DIR}/<destination>"
+    echo "usage: cloudsync <dir>."
+    echo "info: ${CLOUD_DIR}/<dir>"
     exit 1
 elif [ "$#" -gt 1 ]; then
     echo "error: too many arguments."
     exit 1
 fi
 
+USER=$(stat -c "%U" "${NC_DIR}")
+GROUP=$(stat -c "%G" "${NC_DIR}")
+
 function main() {
+
+    local arg dest user group
+    local -a items
 
     arg="$1"
     dest="${CLOUD_DIR}/${arg}"
@@ -29,20 +34,13 @@ function main() {
 
     if [ ! -d "${dest}" ]; then
         echo "info: creating ${dest} direcory..."
-        install -d -o ${SERVER_USER} -g ${SERVER_GROUP} -m 750 "${dest}"
+        install -d -o ${USER} -g ${GROUP} -m 750 "${dest}"
         if [ $? -ne 0 ]; then
             echo "error: unable to create ${dest} directory."
             exit 1
         fi
     fi
-    move_to_cloud "${arg}" "${items[@]}"
-
-    echo "info: updating nextcloud server..."
-    sudo -u ${SERVER_USER} php ${OCC} files:scan --all
-    if [ $? -ne 0 ]; then
-        echo "error: failed scan nextcloud server"
-        exit 1
-    fi
+    cloud_sync "${arg}" "${items[@]}"
 
     echo "done."
     return 0
@@ -50,12 +48,14 @@ function main() {
 
 function change_owner() {
 
+    local src items
+
     src="$1"
     items="$2"
 
+    echo "info: change ownership to ${USER}:${GROUP}..."
     for i in "${items[@]}"; do
-        echo "info: change ownership of ${i} to ${SERVER_USER}:${SERVER_GROUP}..."
-        chown -R ${SERVER_USER}:${SERVER_GROUP} "${i}"
+        chown -R ${USER}:${GROUP} "${i}"
         if [ $? -ne 0 ]; then
             echo "error: failed to change ownership of \"${i}\""
             exit 1
@@ -63,19 +63,28 @@ function change_owner() {
     done
 }
 
-function move_to_cloud() {
+function cloud_sync() {
+
+    local dest items
     
     dest="$1"
     items="$2"
 
+    echo "info: moving items to ${CLOUD_DIR}/${dest}/..."
     for i in "${items[@]}"; do
-        echo "info: moving ${i} to ${CLOUD_DIR}/${dest}/..."
         mv -n "${i}" "${CLOUD_DIR}"/"${dest}"/"${i##*/}"
         if [ $? -ne 0 ]; then
             echo "error: failed to move src to ${i}"
             exit 1
         fi
     done
+
+    echo "info: updating nextcloud server..."
+    sudo -u ${USER} php "${NC_DIR}"/occ files:scan --all
+    if [ $? -ne 0 ]; then
+        echo "error: failed scan nextcloud server"
+        exit 1
+    fi
 }
 
 main "$@"
