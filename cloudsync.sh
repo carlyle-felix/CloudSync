@@ -53,7 +53,6 @@ function change_owner() {
     src="$1"
     items="$2"
 
-    chown -R ${SERVER_USER}:${SERVER_GROUP} "${SRC_DIR}"/"${src}"
     for i in "${items[@]}"; do
         echo "info: change ownership of ${i} to ${SERVER_USER}:${SERVER_GROUP}..."
         chown -R ${SERVER_USER}:${SERVER_GROUP} "${i}"
